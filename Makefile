@@ -1,16 +1,4 @@
 # Compiler settings
-# Checking for ldns using pkg-config
-ifeq ($(shell pkg-config --exists ldns || echo no), no)
-    $(error "The ldns library was not found. Please install libldns-dev (Debian/Ubuntu) or ldns-devel (Fedora/CentOS).")
-endif
-
-# Automatically receiving flags
-LDNS_CFLAGS = $(shell pkg-config --cflags ldns)
-LDNS_LIBS = $(shell pkg-config --libs ldns)
-
-# Adding flags to core variables
-CXXFLAGS += $(LDNS_CFLAGS)
-LDFLAGS += $(LDNS_LIBS)
 CXX = g++
 CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
 LDFLAGS = -lldns

@@ -12,8 +12,6 @@
 
 using namespace std;
 
-const string VERSION = "1.0.1"; // Версия программы
-
 // Global variable for loop control
 bool keep_running = true;
 
@@ -30,10 +28,11 @@ void signal_handler(int sig) {
 void daemonize() {
     pid_t pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
-    if (pid > 0) exit(EXIT_SUCCESS); 
+    if (pid > 0) exit(EXIT_SUCCESS); // Terminating the parent process
 
-    if (setsid() < 0) exit(EXIT_FAILURE); 
+    if (setsid() < 0) exit(EXIT_FAILURE); // Create a new session
 
+    // Ignore terminal signals
     signal(SIGCHLD, SIG_IGN);
     signal(SIGHUP, SIG_IGN);
 
@@ -44,51 +43,43 @@ void daemonize() {
     umask(0);
     if (chdir("/") < 0) exit(EXIT_FAILURE);
 
+    // Close standard descriptors (stdin, stdout, stderr)
     for (int x = sysconf(_SC_OPEN_MAX); x >= 0; x--) {
         close(x);
     }
 
+    // Open Log
     openlog("dnsmap", LOG_PID | LOG_NDELAY, LOG_DAEMON);
 }
 
 void print_usage(char* prog_name) {
-    cout << "Usage: " << prog_name << " [-a listen_addr] [-p port] [-u upstream_ip] [-r fake_range] [-d] [-v] [--version]" << endl;
+    cout << "Usage: " << prog_name << " [-a listen_addr] [-p port] [-u upstream_ip] [-r fake_range] [-d] [-f]" << endl;
     cout << "Options:" << endl;
     cout << "  -a <addr>      Address to listen on (default: 0.0.0.0)" << endl;
     cout << "  -p <port>      Port to listen on (default: 53)" << endl;
     cout << "  -u <ip>        Upstream DNS server (default: 9.9.9.10)" << endl;
     cout << "  -r <cidr>      Fake IP range (default: 10.64.0.0/15)" << endl;
-    cout << "  -d             Run as daemon (background)" << endl;
-    cout << "  -v             Enable verbose debug logging" << endl;
-    cout << "  --version      Show version information" << endl;
+    cout << "  -d             Enable verbose debug logging" << endl;
+    cout << "  -f             Run in foreground (don't daemonize)" << endl;
 }
 
 int main(int argc, char** argv) {
-    // Простая проверка на --version до основного цикла getopt
-    for (int i = 1; i < argc; i++) {
-        if (string(argv[i]) == "--version") {
-            cout << "DNSMap version " << VERSION << endl;
-            return 0;
-        }
-    }
-
     string listen_ip = "0.0.0.0";
     int port = 53;
     string upstream_ip = "9.9.9.10";
     string range = "10.64.0.0/15";
     bool debug_mode = false;
-    bool should_daemonize = false;
+    bool foreground = false;
 
     int opt;
-    // Изменены флаги: -d теперь daemon, -v теперь verbose
-    while ((opt = getopt(argc, argv, "a:p:u:r:dvh")) != -1) {
+    while ((opt = getopt(argc, argv, "a:p:u:r:dfh")) != -1) {
         switch (opt) {
             case 'a': listen_ip = optarg; break;
             case 'p': port = stoi(optarg); break;
             case 'u': upstream_ip = optarg; break;
             case 'r': range = optarg; break;
-            case 'd': should_daemonize = true; break;
-            case 'v': debug_mode = true; break;
+            case 'd': debug_mode = true; break;
+            case 'f': foreground = true; break;
             case 'h':
             default:
                 print_usage(argv[0]);
@@ -96,13 +87,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (should_daemonize) {
+    if (!foreground) {
         daemonize();
     } else {
-        // Если в foreground, дублируем логи в stderr (LOG_PERROR)
         openlog("dnsmap", LOG_PID | LOG_PERROR, LOG_USER);
     }
 
+    // Signal registration
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
@@ -156,6 +147,7 @@ int main(int argc, char** argv) {
                 continue;
             }
 
+            // Setting a timeout for upstream to prevent the daemon from hanging
             struct timeval tv;
             tv.tv_sec = 2;
             tv.tv_usec = 0;

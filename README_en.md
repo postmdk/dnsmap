@@ -10,8 +10,8 @@ This is a port of the original Python script by ValdikSS https://github.com/vald
 * **State Recovery**: On startup, it reads the current rules from the system, restoring the mapping table.
 * **Debug Mode**: Detailed logging of network operations and DNS packet manipulation.
 * **Arguments**: -a (address), -p (port), -u (upstream), -r (range).
-* **-f**: Run in foreground (don't daemonize)
-* **-d**: Enables verbose output.
+* **-d**: Run in a demonize
+* **-v**: Enables verbose output.
 ## Dependencies
 
 For build and working needs:
