@@ -1,12 +1,31 @@
 [Unit]
-Description=Fake DNS Mapping Server
+Description=DNSMap Daemon Service
+# Запускать только после того, как сеть станет доступна
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/dnsmap -a 127.0.0.1 -r 10.64.0.0/15 -u 9.9.9.10
+# Используем 'simple', так как мы добавили флаг -f (foreground)
+# Это рекомендуемый способ для работы с systemd
+ExecStart=/usr/local/bin/dnsmap -a 0.0.0.0 -p 53 -u 9.9.9.10 -r 10.64.0.0/15 -f
+
+# Автоматический перезапуск при падении процесса
 Restart=always
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+# Подождать 5 секунд перед перезапуском
+RestartSec=5s
+
+# Ограничение ресурсов (опционально)
+MemoryLimit=128M
+
+# Запуск от пользователя root необходим для бинда на 53 порт
+# Если используете setcap, можно сменить на обычного пользователя
+User=root
+Group=root
+
+# Настройка логирования
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dnsmap
 
 [Install]
+# Запускать сервис при загрузке системы
 WantedBy=multi-user.target
