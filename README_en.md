@@ -10,7 +10,7 @@ This is a port of the original Python script by ValdikSS https://github.com/vald
 * **State Recovery**: On startup, it reads the current rules from the system, restoring the mapping table.
 * **Debug Mode**: Detailed logging of network operations and DNS packet manipulation.
 * **Arguments**: -a (address), -p (port), -u (upstream), -r (range).
-* **-f**: -f Run in foreground (don't daemonize)
+* **-f**: Run in foreground (don't daemonize)
 * **-d**: Enables verbose output.
 ## Dependencies
 
@@ -19,7 +19,7 @@ For build and working needs:
 * **Compiler**: GCC с поддержкой C++17
 * **Permissions**: `CAP_NET_ADMIN` to manage the firewall and `CAP_NET_BIND_SERVICE` to work on port 53.
 
-In Debian, Ubuntu installing dependencies:
+In Debian/Ubuntu installing dependencies:
 ```bash
 sudo apt install libldns-dev
 ```
