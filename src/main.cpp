@@ -12,7 +12,7 @@
 
 using namespace std;
 
-// Глобальная переменная для управления циклом
+// Global variable for loop control
 bool keep_running = true;
 
 void signal_handler(int sig) {
@@ -28,11 +28,11 @@ void signal_handler(int sig) {
 void daemonize() {
     pid_t pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
-    if (pid > 0) exit(EXIT_SUCCESS); // Завершаем родительский процесс
+    if (pid > 0) exit(EXIT_SUCCESS); // Terminating the parent process
 
-    if (setsid() < 0) exit(EXIT_FAILURE); // Создаем новую сессию
+    if (setsid() < 0) exit(EXIT_FAILURE); // Create a new session
 
-    // Игнорируем сигналы терминала
+    // Ignore terminal signals
     signal(SIGCHLD, SIG_IGN);
     signal(SIGHUP, SIG_IGN);
 
@@ -43,12 +43,12 @@ void daemonize() {
     umask(0);
     if (chdir("/") < 0) exit(EXIT_FAILURE);
 
-    // Закрываем стандартные дескрипторы (stdin, stdout, stderr)
+    // Close standard descriptors (stdin, stdout, stderr)
     for (int x = sysconf(_SC_OPEN_MAX); x >= 0; x--) {
         close(x);
     }
 
-    // Открываем лог
+    // Open Log
     openlog("dnsmap", LOG_PID | LOG_NDELAY, LOG_DAEMON);
 }
 
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
         openlog("dnsmap", LOG_PID | LOG_PERROR, LOG_USER);
     }
 
-    // Регистрация сигналов
+    // Signal registration
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            // Установка таймаута для апстрима, чтобы демон не завис
+            // Setting a timeout for upstream to prevent the daemon from hanging
             struct timeval tv;
             tv.tv_sec = 2;
             tv.tv_usec = 0;
