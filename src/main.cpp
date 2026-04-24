@@ -12,7 +12,7 @@
 
 using namespace std;
 
-const string VERSION = "1.0.1"; // Версия программы
+const string VERSION = "1.0.1";
 
 // Global variable for loop control
 bool keep_running = true;
@@ -64,7 +64,6 @@ void print_usage(char* prog_name) {
 }
 
 int main(int argc, char** argv) {
-    // Простая проверка на --version до основного цикла getopt
     for (int i = 1; i < argc; i++) {
         if (string(argv[i]) == "--version") {
             cout << "DNSMap version " << VERSION << endl;
@@ -80,7 +79,6 @@ int main(int argc, char** argv) {
     bool should_daemonize = false;
 
     int opt;
-    // Изменены флаги: -d теперь daemon, -v теперь verbose
     while ((opt = getopt(argc, argv, "a:p:u:r:dvh")) != -1) {
         switch (opt) {
             case 'a': listen_ip = optarg; break;
@@ -99,7 +97,7 @@ int main(int argc, char** argv) {
     if (should_daemonize) {
         daemonize();
     } else {
-        // Если в foreground, дублируем логи в stderr (LOG_PERROR)
+        // if in foreground, logs to stderr (LOG_PERROR)
         openlog("dnsmap", LOG_PID | LOG_PERROR, LOG_USER);
     }
 
