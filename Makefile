@@ -2,7 +2,8 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
 LDFLAGS = -lldns
-
+VERSION=1.0.1
+CXXFLAGS += -DVERSION=\"$(VERSION)\"
 # Dirs
 SRC_DIR = src
 OBJ_DIR = obj
