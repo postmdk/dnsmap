@@ -7,14 +7,16 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <getopt.h>
+#include <errno.h>
 
 #include "ip_manager.hpp"
 #include "dns_processor.hpp"
-#ifndef VERSION
-#define VERSION "unknown"
-#endif
+
 using namespace std;
 
+#ifndef VERSION
+#define VERSION "1.0.1"
+#endif
 
 // Глобальная переменная для управления циклом
 bool keep_running = true;
@@ -74,7 +76,6 @@ int main(int argc, char** argv) {
     bool debug_mode = false;
     bool should_daemonize = false;
 
-    // Конфигурация длинных опций
     static struct option long_options[] = {
         {"listen",    required_argument, 0, 'a'},
         {"port",      required_argument, 0, 'p'},
@@ -110,7 +111,6 @@ int main(int argc, char** argv) {
     if (should_daemonize) {
         daemonize();
     } else {
-        // При работе в обычном режиме логи дублируются в stderr (LOG_PERROR)
         openlog("dnsmap", LOG_PID | LOG_PERROR, LOG_USER);
     }
 
@@ -129,6 +129,15 @@ int main(int argc, char** argv) {
         int optval = 1;
         setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
+        /* * Set a receive timeout. Without this, recvfrom() would block forever,
+         * preventing the daemon from checking 'keep_running' and shutting down 
+         * gracefully during systemctl stop.
+         */
+        struct timeval tv_timeout;
+        tv_timeout.tv_sec = 1; 
+        tv_timeout.tv_usec = 0;
+        setsockopt(server_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_timeout, sizeof(tv_timeout));
+
         struct sockaddr_in addr = {};
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);
@@ -144,8 +153,7 @@ int main(int argc, char** argv) {
         upstream_addr.sin_port = htons(53);
         inet_pton(AF_INET, upstream_ip.c_str(), &upstream_addr.sin_addr);
 
-        syslog(LOG_NOTICE, "DNSMap started. Listening: %s:%d, Upstream: %s", 
-               listen_ip.c_str(), port, upstream_ip.c_str());
+        syslog(LOG_NOTICE, "DNSMap %s started. Listening: %s:%d", VERSION, listen_ip.c_str(), port);
 
         while (keep_running) {
             uint8_t buffer[4096];
@@ -153,7 +161,13 @@ int main(int argc, char** argv) {
             socklen_t client_len = sizeof(client_addr);
             
             ssize_t n = recvfrom(server_sock, buffer, sizeof(buffer), 0, (struct sockaddr*)&client_addr, &client_len);
-            if (n <= 0) continue;
+            
+            if (n < 0) {
+                // If errno is EAGAIN or EWOULDBLOCK, it's just a timeout, so loop back
+                if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
+                if (keep_running) syslog(LOG_ERR, "recvfrom error: %m");
+                break;
+            }
 
             if (debug_mode) {
                 char c_ip[INET_ADDRSTRLEN];
@@ -162,15 +176,12 @@ int main(int argc, char** argv) {
             }
 
             int upstream_sock = socket(AF_INET, SOCK_DGRAM, 0);
-            if (upstream_sock < 0) {
-                syslog(LOG_WARNING, "Failed to create upstream socket");
-                continue;
-            }
+            if (upstream_sock < 0) continue;
 
-            struct timeval tv;
-            tv.tv_sec = 2;
-            tv.tv_usec = 0;
-            setsockopt(upstream_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            struct timeval tv_up;
+            tv_up.tv_sec = 2;
+            tv_up.tv_usec = 0;
+            setsockopt(upstream_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_up, sizeof(tv_up));
 
             sendto(upstream_sock, buffer, n, 0, (struct sockaddr*)&upstream_addr, sizeof(upstream_addr));
             
