@@ -26,14 +26,13 @@ chain PREROUTING {
 * **-v**: Enables verbose output.
 ## Dependencies
 
-For build and working needs:
-* **Library ldns**: `libldns-dev`
-* **Compiler**: GCC с поддержкой C++17
+* **Library**: `libldns3t64 libnftables1`
+* **Compiler**: GCC with C++17
 * **Permissions**: `CAP_NET_ADMIN` to manage the firewall and `CAP_NET_BIND_SERVICE` to work on port 53.
 
 In Debian/Ubuntu installing dependencies:
 ```bash
-sudo apt install libldns-dev
+sudo apt install libldns-dev libnftables-dev nlohmann-json3-dev
 ```
 ## Build
 ```bash
