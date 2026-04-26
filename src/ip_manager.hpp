@@ -2,11 +2,10 @@
 #define IP_MANAGER_HPP
 
 #include <string>
-#include <vector>
 #include <deque>
 #include <map>
 #include <cstdint>
-#include <nftables/libnftables.h> // Required to work with the API
+#include <nftables/libnftables.h>
 
 class IPManager {
 public:
@@ -17,15 +16,17 @@ public:
 
 private:
     bool debug;
+    std::string base_ip_str;
+    int prefix_len;
     struct nft_ctx *nft;
+    std::string pool_cidr;
 
     std::deque<uint32_t> free_ips;
     std::map<uint32_t, uint32_t> real_to_fake;
 
     void parse_cidr(const std::string& cidr);
-    void setup_base_structure(); // The name must match .cpp
-    void load_existing_mappings();
-
+    void sync_with_kernel();
+    void setup_base_structure();
     bool nft_run(const std::string& json_cmd);
 };
 

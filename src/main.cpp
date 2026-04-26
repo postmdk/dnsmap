@@ -15,27 +15,24 @@
 using namespace std;
 
 #ifndef VERSION
-#define VERSION "1.1.0-api"
+#define VERSION "1.1.1-api" // Обновил версию
 #endif
 
 bool keep_running = true;
 
 void signal_handler(int sig) {
-    switch (sig) {
-        case SIGTERM:
-        case SIGINT:
-            syslog(LOG_INFO, "Termination signal received. Shutting down...");
-            keep_running = false;
-            break;
+    if (sig == SIGTERM || sig == SIGINT) {
+        syslog(LOG_NOTICE, "Termination signal received. Shutting down...");
+        keep_running = false;
     }
 }
 
-void daemonize() {
+void daemonize(bool debug) {
     pid_t pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
-    if (pid > 0) exit(EXIT_SUCCESS); 
+    if (pid > 0) exit(EXIT_SUCCESS);
 
-    if (setsid() < 0) exit(EXIT_FAILURE); 
+    if (setsid() < 0) exit(EXIT_FAILURE);
 
     signal(SIGCHLD, SIG_IGN);
     signal(SIGHUP, SIG_IGN);
@@ -46,14 +43,17 @@ void daemonize() {
 
     umask(0);
     if (chdir("/") < 0) exit(EXIT_FAILURE);
-
     for (long x = sysconf(_SC_OPEN_MAX); x >= 0; x--) {
         close(x);
     }
 
     openlog("dnsmap", LOG_PID | LOG_NDELAY, LOG_DAEMON);
+    if (debug) {
+        setlogmask(LOG_UPTO(LOG_DEBUG));
+    } else {
+        setlogmask(LOG_UPTO(LOG_NOTICE));
+    }
 }
-
 void print_usage(char* prog_name) {
     cout << "Usage: " << prog_name << " [options]" << endl;
     cout << "Options:" << endl;
@@ -108,16 +108,20 @@ int main(int argc, char** argv) {
     }
 
     if (should_daemonize) {
-        daemonize();
+        daemonize(debug_mode);
     } else {
         openlog("dnsmap", LOG_PID | LOG_PERROR, LOG_USER);
+        if (debug_mode) {
+            setlogmask(LOG_UPTO(LOG_DEBUG));
+        } else {
+            setlogmask(LOG_UPTO(LOG_NOTICE));
+        }
     }
 
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
     try {
-        // Init IPManager.
         IPManager ip_manager(range, debug_mode);
 
         int server_sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -149,7 +153,8 @@ int main(int argc, char** argv) {
         upstream_addr.sin_port = htons(53);
         inet_pton(AF_INET, upstream_ip.c_str(), &upstream_addr.sin_addr);
 
-        syslog(LOG_NOTICE, "DNSMap %s started (NFT API mode). Listening: %s:%d", VERSION, listen_ip.c_str(), port);
+        // Чистый лог запуска
+        syslog(LOG_NOTICE, "Started version %s (NFT API mode). Listening on %s:%d", VERSION, listen_ip.c_str(), port);
 
         while (keep_running) {
             uint8_t buffer[4096];
@@ -164,7 +169,6 @@ int main(int argc, char** argv) {
                 break;
             }
 
-            // Processing request via DNS processor
             int upstream_sock = socket(AF_INET, SOCK_DGRAM, 0);
             if (upstream_sock < 0) continue;
 
@@ -195,7 +199,7 @@ int main(int argc, char** argv) {
         }
 
         close(server_sock);
-        syslog(LOG_NOTICE, "DNSMap stopped gracefully");
+        syslog(LOG_NOTICE, "Stopped gracefully");
 
     } catch (const exception& e) {
         syslog(LOG_CRIT, "Fatal exception: %s", e.what());

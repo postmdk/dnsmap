@@ -8,9 +8,15 @@ This is a port of the original Python script by ValdikSS https://github.com/vald
 * **Netfilter Control**: `nftables` (DNAT) create
 ```
 table ip dnsmap {
-	chain PREROUTING {
+	map fake_to_real {
+		type ipv4_addr : ipv4_addr
+		elements = { ... }
+chain PREROUTING {
 		type nat hook prerouting priority dstnat; policy accept;
-    }
+		ip daddr <IP Range> dnat to ip daddr map @fake_to_real
+	}
+		
+
 ```
 * **IPv6 Blocking**: Blocks `AAAA` and `HTTPS` records, forcing the use of IPv4.
 * **State Recovery**: On startup, it reads the current rules from the system, restoring the mapping table.
