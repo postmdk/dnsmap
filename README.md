@@ -1,7 +1,7 @@
 
 ## DNSMap-C++ working via nftables API for Linux
 DNS proxy server in C++ for dynamic mapping IP.
-This is a port of the original Python script by ValdikSS https://github.com/valdikss, optimized for Linux network environments.
+optimized for Linux network environments.
 ## Main functions
 
 * **Dynamic NAT**: Intercepts `A`-records DNS and replaces real IPs with "fake" ones from a specified pool.
