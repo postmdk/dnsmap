@@ -15,7 +15,7 @@
 using namespace std;
 
 #ifndef VERSION
-#define VERSION "1.1.1-api" // Обновил версию
+#define VERSION "1.1.1-api"
 #endif
 
 bool keep_running = true;
@@ -106,17 +106,20 @@ int main(int argc, char** argv) {
                 return 0;
         }
     }
-
-    if (should_daemonize) {
+    // Let's check if we're running via systemd
+    if (std::getenv("INVOCATION_ID") != nullptr) {
+        // In systemd, we don't use LOG_PERROR to avoid duplicate entries.
+        openlog("dnsmap", LOG_PID, LOG_DAEMON);
+    } else if (should_daemonize) {
         daemonize(debug_mode);
+        // After the fork in daemonize(), the descriptors are closed, we work purely with syslog
+        openlog("dnsmap", LOG_PID, LOG_DAEMON);
     } else {
+        // Interactive launch: output to both the console (LOG_PERROR) and the log
         openlog("dnsmap", LOG_PID | LOG_PERROR, LOG_USER);
-        if (debug_mode) {
-            setlogmask(LOG_UPTO(LOG_DEBUG));
-        } else {
-            setlogmask(LOG_UPTO(LOG_NOTICE));
-        }
     }
+    // Setting up a mask after opening a log
+    setlogmask(LOG_UPTO(debug_mode ? LOG_DEBUG : LOG_NOTICE));
 
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
@@ -153,7 +156,7 @@ int main(int argc, char** argv) {
         upstream_addr.sin_port = htons(53);
         inet_pton(AF_INET, upstream_ip.c_str(), &upstream_addr.sin_addr);
 
-        // Чистый лог запуска
+        // clear log start
         syslog(LOG_NOTICE, "Started version %s (NFT API mode). Listening on %s:%d", VERSION, listen_ip.c_str(), port);
 
         while (keep_running) {
