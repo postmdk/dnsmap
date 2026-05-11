@@ -5,7 +5,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
-#include <functional>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <syslog.h>
