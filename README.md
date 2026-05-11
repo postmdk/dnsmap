@@ -21,7 +21,7 @@ chain PREROUTING {
 * **IPv6 Blocking**: Blocks `AAAA` and `HTTPS` records, forcing the use of IPv4.
 * **State Recovery**: On startup, it reads the current rules from the system, restoring the mapping table.
 * **Debug Mode**: Detailed logging of network operations and DNS packet manipulation.
-* **Arguments**: -a (address), -p (port), -u (upstream), -r (range).
+* **Arguments**: -a (address), -p (port), -u (upstream), -r (range), -w (workers).
 * **-d**: Run in a demonize
 * **-v**: Enables verbose output.
 ## Dependencies
@@ -30,7 +30,7 @@ chain PREROUTING {
 * **Compiler**: GCC with C++17
 * **Permissions**: `CAP_NET_ADMIN` to manage the firewall and `CAP_NET_BIND_SERVICE` to work on port 53.
 
-In Debian/Ubuntu installing dependencies:
+In Debian/Ubuntu installing dependencies
 ```bash
 sudo apt install libldns-dev libnftables-dev nlohmann-json3-dev
 ```

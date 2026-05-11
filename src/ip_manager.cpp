@@ -122,6 +122,7 @@ void IPManager::setup_base_structure() {
     nft_run(final_json.dump());
 }
 uint32_t IPManager::get_or_create(uint32_t real_ip) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (real_to_fake.count(real_ip)) {
         return real_to_fake[real_ip];
     }

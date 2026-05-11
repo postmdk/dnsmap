@@ -5,6 +5,7 @@
 #include <deque>
 #include <map>
 #include <cstdint>
+#include <mutex>
 #include <nftables/libnftables.h>
 
 class IPManager {
@@ -16,6 +17,7 @@ public:
 
 private:
     bool debug;
+    std::mutex mtx;
     std::string base_ip_str;
     int prefix_len;
     struct nft_ctx *nft;

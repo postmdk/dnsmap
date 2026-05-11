@@ -1,6 +1,11 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <functional>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <syslog.h>
@@ -15,45 +20,85 @@
 using namespace std;
 
 #ifndef VERSION
-#define VERSION "1.1.1-api"
+#define VERSION "1.1.3"
 #endif
 
+struct DNSJob {
+    struct sockaddr_in client_addr;
+    vector<uint8_t> data;
+};
+
+queue<DNSJob> job_queue;
+mutex queue_mutex;
+condition_variable queue_cv;
 bool keep_running = true;
 
-void signal_handler(int sig) {
-    if (sig == SIGTERM || sig == SIGINT) {
-        syslog(LOG_NOTICE, "Termination signal received. Shutting down...");
-        keep_running = false;
+void worker_thread(int server_sock, struct sockaddr_in upstream_addr, IPManager& ip_manager, bool debug) {
+    while (true) {
+        DNSJob job;
+        {
+            unique_lock<mutex> lock(queue_mutex);
+            queue_cv.wait(lock, [] { return !job_queue.empty() || !keep_running; });
+            if (!keep_running && job_queue.empty()) return;
+            job = std::move(job_queue.front());
+            job_queue.pop();
+        }
+
+        int up_sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (up_sock < 0) continue;
+
+        struct timeval tv = {2, 0};
+        setsockopt(up_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+        sendto(up_sock, job.data.data(), job.data.size(), 0, (struct sockaddr*)&upstream_addr, sizeof(upstream_addr));
+        
+        uint8_t res_buf[4096];
+        ssize_t rn = recv(up_sock, res_buf, sizeof(res_buf), 0);
+        close(up_sock);
+
+        if (rn > 0) {
+            uint8_t* out_pkt = nullptr;
+            size_t out_len = 0;
+            process_packet(out_pkt, out_len, res_buf, rn, ip_manager, debug);
+
+            if (out_pkt) {
+                sendto(server_sock, out_pkt, out_len, 0, (struct sockaddr*)&job.client_addr, sizeof(job.client_addr));
+                free(out_pkt);
+            } else {
+                sendto(server_sock, res_buf, rn, 0, (struct sockaddr*)&job.client_addr, sizeof(job.client_addr));
+            }
+        }
     }
 }
 
-void daemonize(bool debug) {
+void signal_handler(int sig) {
+    if (sig == SIGTERM || sig == SIGINT) {
+        syslog(LOG_NOTICE, "Shutdown signal received...");
+        {
+            lock_guard<mutex> lock(queue_mutex);
+            keep_running = false;
+        }
+        queue_cv.notify_all();
+    }
+}
+
+void daemonize() {
     pid_t pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
     if (pid > 0) exit(EXIT_SUCCESS);
-
     if (setsid() < 0) exit(EXIT_FAILURE);
-
     signal(SIGCHLD, SIG_IGN);
     signal(SIGHUP, SIG_IGN);
-
     pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
     if (pid > 0) exit(EXIT_SUCCESS);
-
     umask(0);
     if (chdir("/") < 0) exit(EXIT_FAILURE);
     for (long x = sysconf(_SC_OPEN_MAX); x >= 0; x--) {
         close(x);
     }
-
-    openlog("dnsmap", LOG_PID | LOG_NDELAY, LOG_DAEMON);
-    if (debug) {
-        setlogmask(LOG_UPTO(LOG_DEBUG));
-    } else {
-        setlogmask(LOG_UPTO(LOG_NOTICE));
-    }
 }
+
 void print_usage(char* prog_name) {
     cout << "Usage: " << prog_name << " [options]" << endl;
     cout << "Options:" << endl;
@@ -61,6 +106,7 @@ void print_usage(char* prog_name) {
     cout << "  -p, --port <port>      Port to listen on (default: 53)" << endl;
     cout << "  -u, --upstream <ip>    Upstream DNS server (default: 9.9.9.10)" << endl;
     cout << "  -r, --range <cidr>     Fake IP range (default: 10.64.0.0/15)" << endl;
+    cout << "  -w, --workers <num>    Number of worker threads (default: 4)" << endl;
     cout << "  -d, --daemonize        Run as daemon (background)" << endl;
     cout << "  -v, --verbose          Enable verbose debug logging" << endl;
     cout << "  -V, --version          Show version information" << endl;
@@ -72,6 +118,7 @@ int main(int argc, char** argv) {
     int port = 53;
     string upstream_ip = "9.9.9.10";
     string range = "10.64.0.0/15";
+    int num_workers = 4; // default value 4
     bool debug_mode = false;
     bool should_daemonize = false;
 
@@ -80,6 +127,7 @@ int main(int argc, char** argv) {
         {"port",      required_argument, 0, 'p'},
         {"upstream",  required_argument, 0, 'u'},
         {"range",     required_argument, 0, 'r'},
+        {"workers",   required_argument, 0, 'w'},
         {"daemonize", no_argument,       0, 'd'},
         {"verbose",   no_argument,       0, 'v'},
         {"version",   no_argument,       0, 'V'},
@@ -89,56 +137,44 @@ int main(int argc, char** argv) {
 
     int opt;
     int option_index = 0;
-    while ((opt = getopt_long(argc, argv, "a:p:u:r:dvhV", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "a:p:u:r:w:dvhV", long_options, &option_index)) != -1) {
         switch (opt) {
             case 'a': listen_ip = optarg; break;
             case 'p': port = stoi(optarg); break;
             case 'u': upstream_ip = optarg; break;
             case 'r': range = optarg; break;
+            case 'w': num_workers = stoi(optarg); break;
             case 'd': should_daemonize = true; break;
             case 'v': debug_mode = true; break;
-            case 'V':
-                cout << "DNSMap version " << VERSION << endl;
-                return 0;
-            case 'h':
-            default:
-                print_usage(argv[0]);
-                return 0;
+            case 'V': cout << "DNSMap version " << VERSION << endl; return 0;
+            case 'h': default: print_usage(argv[0]); return 0;
         }
     }
-    // Let's check if we're running via systemd
+
+    if (num_workers < 1) num_workers = 1;
+
     if (std::getenv("INVOCATION_ID") != nullptr) {
-        // In systemd, we don't use LOG_PERROR to avoid duplicate entries.
         openlog("dnsmap", LOG_PID, LOG_DAEMON);
     } else if (should_daemonize) {
-        daemonize(debug_mode);
-        // After the fork in daemonize(), the descriptors are closed, we work purely with syslog
+        daemonize();
         openlog("dnsmap", LOG_PID, LOG_DAEMON);
     } else {
-        // Interactive launch: output to both the console (LOG_PERROR) and the log
         openlog("dnsmap", LOG_PID | LOG_PERROR, LOG_USER);
     }
-    // Setting up a mask after opening a log
-    setlogmask(LOG_UPTO(debug_mode ? LOG_DEBUG : LOG_NOTICE));
 
+    setlogmask(LOG_UPTO(debug_mode ? LOG_DEBUG : LOG_NOTICE));
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
     try {
         IPManager ip_manager(range, debug_mode);
-
         int server_sock = socket(AF_INET, SOCK_DGRAM, 0);
-        if (server_sock < 0) {
-            syslog(LOG_ERR, "Socket creation failed: %m");
-            return 1;
-        }
+        if (server_sock < 0) return 1;
 
         int optval = 1;
         setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
-        struct timeval tv_timeout;
-        tv_timeout.tv_sec = 1; 
-        tv_timeout.tv_usec = 0;
+        struct timeval tv_timeout = {1, 0};
         setsockopt(server_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_timeout, sizeof(tv_timeout));
 
         struct sockaddr_in addr = {};
@@ -147,7 +183,7 @@ int main(int argc, char** argv) {
         inet_pton(AF_INET, listen_ip.c_str(), &addr.sin_addr);
 
         if (bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-            syslog(LOG_ERR, "Bind failed on %s:%d: %m", listen_ip.c_str(), port);
+            syslog(LOG_ERR, "Bind failed: %m");
             return 1;
         }
 
@@ -156,8 +192,12 @@ int main(int argc, char** argv) {
         upstream_addr.sin_port = htons(53);
         inet_pton(AF_INET, upstream_ip.c_str(), &upstream_addr.sin_addr);
 
-        // clear log start
-        syslog(LOG_NOTICE, "Started version %s (NFT API mode). Listening on %s:%d", VERSION, listen_ip.c_str(), port);
+        vector<thread> workers;
+        for (int i = 0; i < num_workers; ++i) {
+            workers.emplace_back(worker_thread, server_sock, upstream_addr, std::ref(ip_manager), debug_mode);
+        }
+
+        syslog(LOG_NOTICE, "Started DNSMap %s (Workers: %d, Range: %s)", VERSION, num_workers, range.c_str());
 
         while (keep_running) {
             uint8_t buffer[4096];
@@ -165,47 +205,27 @@ int main(int argc, char** argv) {
             socklen_t client_len = sizeof(client_addr);
             
             ssize_t n = recvfrom(server_sock, buffer, sizeof(buffer), 0, (struct sockaddr*)&client_addr, &client_len);
-            
             if (n < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
-                if (keep_running) syslog(LOG_ERR, "recvfrom error: %m");
                 break;
             }
 
-            int upstream_sock = socket(AF_INET, SOCK_DGRAM, 0);
-            if (upstream_sock < 0) continue;
-
-            struct timeval tv_up;
-            tv_up.tv_sec = 2;
-            tv_up.tv_usec = 0;
-            setsockopt(upstream_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_up, sizeof(tv_up));
-
-            sendto(upstream_sock, buffer, n, 0, (struct sockaddr*)&upstream_addr, sizeof(upstream_addr));
-            
-            uint8_t res_buffer[4096];
-            ssize_t rn = recv(upstream_sock, res_buffer, sizeof(res_buffer), 0);
-            close(upstream_sock);
-
-            if (rn > 0) {
-                uint8_t* out_pkt = nullptr;
-                size_t out_len = 0;
-
-                process_packet(out_pkt, out_len, res_buffer, rn, ip_manager, debug_mode);
-
-                if (out_pkt) {
-                    sendto(server_sock, out_pkt, out_len, 0, (struct sockaddr*)&client_addr, client_len);
-                    free(out_pkt);
-                } else {
-                    sendto(server_sock, res_buffer, rn, 0, (struct sockaddr*)&client_addr, client_len);
-                }
+            {
+                lock_guard<mutex> lock(queue_mutex);
+                job_queue.push({client_addr, vector<uint8_t>(buffer, buffer + n)});
             }
+            queue_cv.notify_one();
+        }
+
+        for (auto& t : workers) {
+            if (t.joinable()) t.join();
         }
 
         close(server_sock);
         syslog(LOG_NOTICE, "Stopped gracefully");
 
     } catch (const exception& e) {
-        syslog(LOG_CRIT, "Fatal exception: %s", e.what());
+        syslog(LOG_CRIT, "Fatal error: %s", e.what());
         closelog();
         return 1;
     }
