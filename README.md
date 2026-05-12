@@ -30,9 +30,13 @@ chain PREROUTING {
 * **Compiler**: GCC with C++17
 * **Permissions**: `CAP_NET_ADMIN` to manage the firewall and `CAP_NET_BIND_SERVICE` to work on port 53.
 
-In Debian/Ubuntu installing dependencies
+In Debian/Ubuntu installing develop dependencies for build
 ```bash
 sudo apt install libldns-dev libnftables-dev nlohmann-json3-dev
+```
+In Debian/Ubuntu installing dependencies for work
+```bash 
+sudo apt install libldns3 libnftables1
 ```
 ## Build
 ```bash
